@@ -22,6 +22,8 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName={#MyAppName}
+; 설치 끝에 윈도우가 아이콘을 다시 읽게 한다 (바탕화면/시작메뉴에 옛 아이콘이 남는 현상 방지)
+ChangesAssociations=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
@@ -36,6 +38,8 @@ Name: "desktopicon"; Description: "바탕화면에 바로가기 만들기"; Grou
 
 [Files]
 Source: "dist\ImageRatioTool\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+; 바로가기 전용 아이콘 파일 (바탕화면이 옛 아이콘 기억을 쓰지 않도록 새 이름으로 따로 둔다)
+Source: "assets\icon.ico"; DestDir: "{app}"; DestName: "QEditor.ico"; Flags: ignoreversion
 
 [InstallDelete]
 ; 예전 이름(이미지 비율 변환기 / 이미지 간편 편집기)의 바로가기가 남아 있으면 지운다
@@ -47,8 +51,8 @@ Type: filesandordirs; Name: "{autoprograms}\이미지 간편 편집기"
 Type: files; Name: "{autoprograms}\이미지 간편 편집기.lnk"
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\QEditor.ico"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\QEditor.ico"; Tasks: desktopicon
 
 [Registry]
 ; 프로그램 설정(로고 경로 등)은 제거할 때 함께 지운다
