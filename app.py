@@ -60,6 +60,8 @@ from cropcore import (
     save_resized,
 )
 
+from feedback import ask_on_exit
+
 APP_NAME = "Q 이미지 편집기"
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff", ".gif")
 PREVIEW_MAX = 2200  # 미리보기용 이미지 최대 변
@@ -144,6 +146,13 @@ QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
 QTabWidget::pane { border: none; }
 QMessageBox { background: #1d1e23; }
+QPushButton#chip { background: #26282f; border: 1px solid #2a2c33; border-radius: 14px; padding: 4px 10px; color: #9096a3; font-size: 12px; }
+QPushButton#chip:hover { border-color: #444853; color: #e8e9ed; }
+QPushButton#chip:checked { background: rgba(58,86,255,38); border: 1px solid #3a56ff; color: #8fa0ff; font-weight: normal; }
+QPushButton#chip:disabled { color: #5d6170; }
+QPlainTextEdit { background: #15161a; border: 1px solid #2a2c33; border-radius: 8px; padding: 6px 8px;
+  selection-background-color: #3a56ff; }
+QPlainTextEdit:focus { border-color: #3a56ff; }
 """
 
 
@@ -874,6 +883,7 @@ class MainWindow(QMainWindow):
         self.ratio_label = PRESETS[0][0]
         self.ratio_value = 1.0
         self.last_dir = ""
+        self._used = False  # 이번 실행에서 이미지를 한 장이라도 열었는지 (종료 의견 팝업 조건)
 
         root = QWidget()
         root.setObjectName("root")
@@ -896,6 +906,11 @@ class MainWindow(QMainWindow):
         beta.setObjectName("beta")
         beta.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self.statusBar().addPermanentWidget(beta)
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """종료할 때 사용 의견 팝업(조건이 맞을 때만). 어떤 경우에도 종료 자체는 막지 않는다."""
+        ask_on_exit(self, self.settings, self._used, on_shown=set_dark_titlebar)
+        super().closeEvent(event)
 
     # ---------- UI 구성 ----------
     def _panel(self) -> tuple[QFrame, QVBoxLayout]:
@@ -1162,6 +1177,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 failed.append(os.path.basename(p))
         if added:
+            self._used = True
             self.last_dir = os.path.dirname(expanded[0])
             self.list.setCurrentRow(first_new)
             self.statusBar().showMessage(f"{added}장을 추가했어요.")
