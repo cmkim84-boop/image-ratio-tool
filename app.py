@@ -144,6 +144,11 @@ QScrollBar::handle:horizontal { background: #3a3d47; border-radius: 4px; min-wid
 QScrollBar::handle:horizontal:hover { background: #4a4f5c; }
 QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
 QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
+QScrollBar:vertical { width: 12px; background: transparent; margin: 0; }
+QScrollBar::handle:vertical { background: #3a3d47; border-radius: 4px; min-height: 40px; margin: 2px 3px; }
+QScrollBar::handle:vertical:hover { background: #4a4f5c; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 QTabWidget::pane { border: none; }
 QMessageBox { background: #1d1e23; }
 QPushButton#chip { background: #26282f; border: 1px solid #2a2c33; border-radius: 14px; padding: 4px 10px; color: #9096a3; font-size: 12px; }
@@ -224,6 +229,7 @@ class CropCanvas(QWidget):
         self.setFocusPolicy(Qt.StrongFocus)
         self.pixmap: QPixmap | None = None
         self.state: CropState | None = None
+        self.target_size: tuple[int, int] | None = None  # 확대·축소 결과 크기(미리보기용)
         self._drag_last: QPointF | None = None
         self._corner: str | None = None
         self.wm: QPixmap | None = None
@@ -254,6 +260,11 @@ class CropCanvas(QWidget):
         self.pixmap = pixmap
         self.state = state
         self.update()
+
+    def set_target(self, size: tuple[int, int] | None) -> None:
+        if size != self.target_size:
+            self.target_size = size
+            self.update()
 
     def set_pixmap(self, pixmap: QPixmap) -> None:
         self.pixmap = pixmap
@@ -287,8 +298,11 @@ class CropCanvas(QWidget):
             return QRectF()
         m = 24
         avail_w, avail_h = self.width() - m * 2, self.height() - m * 2
-        s = min(avail_w / self.state.width, avail_h / self.state.height)
-        w, h = self.state.width * s, self.state.height * s
+        bw, bh = self.state.width, self.state.height
+        if self.mode == "resize" and self.target_size:  # 확대·축소: 바꿀 크기의 모양 그대로 보여준다
+            bw, bh = self.target_size
+        s = min(avail_w / bw, avail_h / bh)
+        w, h = bw * s, bh * s
         return QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
 
     def _crop_widget_rect(self) -> QRectF:
@@ -353,6 +367,7 @@ class CropCanvas(QWidget):
             p.setOpacity(1.0)
 
         if resize_mode:
+            self._paint_resize_chips(p, d)
             return
 
         if mosaic_mode:
@@ -378,6 +393,32 @@ class CropCanvas(QWidget):
         p.setPen(QPen(QColor(C_ACCENT), 1.5))
         for pt in (c.topLeft(), c.topRight(), c.bottomLeft(), c.bottomRight()):
             p.drawRoundedRect(QRectF(pt.x() - 6, pt.y() - 6, 12, 12), 3, 3)
+
+    def _paint_resize_chips(self, p: QPainter, d: QRectF) -> None:
+        """확대·축소 미리보기 위의 작은 표시: 바꿀 크기 / 비율이 달라졌다는 경고."""
+        if not self.target_size or not self.state:
+            return
+        tw, th = self.target_size
+        chips = [(f"{tw} × {th} px", QColor(0, 0, 0, 170), QColor("white"))]
+        if abs((tw / th) / (self.state.width / self.state.height) - 1) > 0.01:
+            chips.append(("가로세로 비율이 달라져 사진이 늘어나 보여요", QColor(255, 180, 84, 235), QColor("#2a1d05")))
+        f = p.font()
+        f.setPixelSize(12)
+        f.setBold(True)
+        p.setFont(f)
+        fm = p.fontMetrics()
+        y = d.top() + 8
+        for text, bg, fg in chips:
+            w = fm.horizontalAdvance(text) + 18
+            if w > d.width() - 16:
+                continue  # 사진이 너무 작게 보일 때는 글자를 생략
+            r = QRectF(d.left() + 8, y, w, 24)
+            path = QPainterPath()
+            path.addRoundedRect(r, 7, 7)
+            p.fillPath(path, bg)
+            p.setPen(fg)
+            p.drawText(r, Qt.AlignCenter, text)
+            y += 30
 
     def _paint_empty(self, p: QPainter) -> None:
         """이미지가 없을 때: 끌어다 놓는 영역 안내."""
@@ -1440,7 +1481,7 @@ class MainWindow(QMainWindow):
 
         hint = QLabel(
             "가로·세로를 입력한 그대로 사진 전체를\n늘리거나 줄여요. (자르지 않아요)\n"
-            "비율이 달라지면 사진이 찌그러져 보일 수 있어요.\n\n"
+            "숫자를 바꾸면 가운데 화면의 사진 모양이\n바로 바뀌어요. 비율이 달라지면 찌그러져 보여요.\n\n"
             "'사진 비율 유지'를 켜면 한쪽만 쓰세요. 다른 쪽은\n"
             "사진마다 비율대로 자동으로 정해져요.\n\n"
             "이 탭에서 저장하면 확대·축소로 저장돼요."
@@ -1493,6 +1534,7 @@ class MainWindow(QMainWindow):
     def _update_resize_ui(self, *_args) -> None:
         st = self._current()
         w, h = self.resize_target
+        self.canvas.set_target((w, h) if st else None)
         self.lbl_rz_orig.setText(f"이 이미지 원본: {st.width} × {st.height} px" if st else "")
         self.btn_rz_orig.setEnabled(st is not None)
         bigger = [x for x in self.states if any(a > b for a, b in zip(self.target_for(x), (x.width, x.height)))]

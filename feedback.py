@@ -13,8 +13,8 @@ import urllib.error
 import urllib.request
 from typing import Callable
 
-from PySide6.QtCore import QPointF, Qt, QThread, Signal
-from PySide6.QtGui import QColor, QPainter, QPen, QPolygonF
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -185,6 +185,10 @@ class FeedbackDialog(QDialog):
         self._on_shown = on_shown
         self._thread: _SendThread | None = None
         self._sending = False
+        self._spin_angle = 0
+        self._spin_timer = QTimer(self)
+        self._spin_timer.setInterval(40)
+        self._spin_timer.timeout.connect(self._spin_tick)
         self.setWindowTitle(app_name)
         self.setModal(True)
         self.setFixedWidth(450)
@@ -311,17 +315,52 @@ class FeedbackDialog(QDialog):
         self.count.setText(f"{len(txt)} / {MAX_COMMENT}자")
         self._hide_warn()
 
+    @staticmethod
+    def _spinner_icon(angle: int) -> QIcon:
+        """버튼 안에 그리는 원형 로딩 표시 (연한 원 + 돌아가는 흰 호)."""
+        size, dpr = 18, 2
+        pm = QPixmap(size * dpr, size * dpr)
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing)
+        rect = QRectF(2, 2, size - 4, size - 4)
+        pen = QPen(QColor(255, 255, 255, 70), 2.2)
+        p.setPen(pen)
+        p.drawEllipse(rect)
+        pen = QPen(QColor("#ffffff"), 2.2, Qt.SolidLine, Qt.RoundCap)
+        p.setPen(pen)
+        p.drawArc(rect, int(-angle * 16), 100 * 16)
+        p.end()
+        return QIcon(pm)
+
+    def _spin_tick(self) -> None:
+        self._spin_angle = (self._spin_angle + 30) % 360
+        self.btn_send.setIcon(self._spinner_icon(self._spin_angle))
+
     def _lock(self, on: bool) -> None:
         self._sending = on
-        for w in (self.stars, self.edit, self.btn_send, self.btn_skip, self.never, *self.chips):
+        # 보내기 버튼은 비활성으로 만들지 않는다(비활성이면 회색으로 바뀌어 로딩 표시가 흐려진다). 중복 클릭은 _on_send 에서 막는다.
+        for w in (self.stars, self.edit, self.btn_skip, self.never, *self.chips):
             w.setEnabled(not on)
-        self.btn_send.setText("보내는 중…" if on else "보내고 종료")
+        if on:
+            self.btn_send.setText("보내는 중…")
+            self.btn_send.setIconSize(QSize(18, 18))
+            self._spin_angle = 0
+            self.btn_send.setIcon(self._spinner_icon(0))
+            self._spin_timer.start()
+        else:
+            self._spin_timer.stop()
+            self.btn_send.setIcon(QIcon())
+            self.btn_send.setText("보내고 종료")
 
     # --- 동작 ---
     def selected_features(self) -> list[str]:
         return [b.text() for b in self.chips if b.isChecked()]
 
     def _on_send(self) -> None:
+        if self._sending:
+            return
         rating = self.stars.value()
         feats = self.selected_features()
         comment = self.edit.toPlainText().strip()
